@@ -91,6 +91,7 @@ const zh = {
     searchByContent: '输入内容查询',
     noRecipient: '无收件人',
     received: '已接收',
+    processing: '处理中',
     selectEmail: '邮箱',
     order: '排序',
     default: '默认',

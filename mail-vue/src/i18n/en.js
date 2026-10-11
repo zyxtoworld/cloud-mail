@@ -91,6 +91,7 @@ const en = {
     searchByContent: 'Enter text to search',
     noRecipient: 'No recipient',
     received: 'Received',
+    processing: 'Processing',
     selectEmail: 'Email',
     order: 'Order',
     default: 'Default',

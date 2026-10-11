@@ -870,13 +870,18 @@ function handleList(list) {
       8: { icon: 'bi:send-x-fill',         color: '#F56C6C', content: t('bounced') },
       4: { icon: 'bi:send-exclamation-fill', color: '#FBBD08', content: t('complained') },
       5: { icon: 'bi:send-arrow-up-fill',  color: '#FBBD08', content: t('delayed') },
+      6: { icon: 'bi:hourglass-split', color: '#FBBD08', content: t('processing') },
       7: { icon: 'ic:round-mark-email-read', color: '#FBBD08', content: t('noRecipient') },
     };
 
     if (email.isDel) {
       email.isDelContent = t('selectDeleted');
     }
-    email.statusIcon = statusIconMap[email.status];
+    email.statusIcon = statusIconMap[email.status] || {
+      icon: 'bi:question-circle',
+      color: '#909399',
+      content: t('unknown')
+    };
   })
 }
 
