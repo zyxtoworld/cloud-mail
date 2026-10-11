@@ -49,16 +49,17 @@ const attService = {
 
 	async toImageUrlHtml(c, content) {
 
+		if (!content || !/<img\b/i.test(content)) {
+			return { imageDataList: [], html: content || '' };
+		}
+
 		const { r2Domain } = await settingService.query(c);
-
+		const ossDomain = domainUtils.toOssDomain(r2Domain);
 		const { document } = parseHTML(content);
-
 		const images = Array.from(document.querySelectorAll('img'));
-
 		let imageDataList = [];
 
 		for (const img of images) {
-
 			//邮件正文base64图片转cid附件
 			const src = img.getAttribute('src');
 			if (src && src.startsWith('data:image')) {
@@ -82,25 +83,20 @@ const attService = {
 			}
 
 			//邮件正文站内图片转cid附件
-			if (src && (src.startsWith(domainUtils.toOssDomain(r2Domain)) || src.startsWith('attachments/'))) {
-
-				const cid = uuidv4().replace(/-/g, '')
+			if (src && ((ossDomain && src.startsWith(ossDomain)) || src.startsWith('attachments/'))) {
+				const cid = uuidv4().replace(/-/g, '');
 				img.setAttribute('src', 'cid:' + cid);
 
 				const attData = {};
-
-				if (src.startsWith(domainUtils.toOssDomain(r2Domain))) {
-					attData.key = src.replace(domainUtils.toOssDomain(r2Domain) + '/','');
-				}
-
-				if (src.startsWith('attachments/')) {
+				if (ossDomain && src.startsWith(ossDomain)) {
+					attData.key = src.replace(ossDomain + '/', '');
+				} else {
 					attData.key = src;
 				}
 
 				attData.contentId = cid;
 				attData.type = attConst.type.EMBED;
 				imageDataList.push(attData);
-
 			}
 
 			const hasInlineWidth = img.hasAttribute('width');
@@ -115,15 +111,17 @@ const attService = {
 
 		//查询已有内嵌url图片信息
 		const keys = [...new Set(imageDataList.filter(item => !item.content).map(item => item.key))];
-		const dbImageList  = await this.selectOneByKeys(c, keys);
+		const dbImageList = await this.selectOneByKeys(c, keys);
+		const dbImageByKey = new Map(dbImageList.map(dbImage => [dbImage.key, dbImage]));
 
 		//设置给当前附件
+		const contentByKey = new Map();
 		await Promise.all(imageDataList.map(async image => {
 			if (image.content) {
 				return;
 			}
 
-			const dbImage = dbImageList.find(dbImage => image.key === dbImage.key);
+			const dbImage = dbImageByKey.get(image.key);
 			if (!dbImage) {
 				return;
 			}
@@ -133,13 +131,17 @@ const attService = {
 			image.mimeType = dbImage.mimeType;
 			image.contentType = dbImage.mimeType;
 
-			const obj = await r2Service.getObj(c, image.key);
-			if (!obj) {
-				return;
+			let contentPromise = contentByKey.get(image.key);
+			if (!contentPromise) {
+				contentPromise = r2Service.getObj(c, image.key).then(obj => {
+					if (!obj) return null;
+					return obj instanceof ArrayBuffer ? obj : obj.arrayBuffer();
+				});
+				contentByKey.set(image.key, contentPromise);
 			}
 
-			image.content = obj instanceof ArrayBuffer ? obj : await obj.arrayBuffer();
-		}))
+			image.content = await contentPromise;
+		}));
 
 		imageDataList = imageDataList.filter(image => image.content);
 
@@ -213,38 +215,41 @@ const attService = {
 	},
 
 	async removeAttByField(c, fieldName, fieldValues) {
+		const allowedFields = {
+			user_id: 'user_id',
+			email_id: 'email_id',
+			account_id: 'account_id'
+		};
+		const column = allowedFields[fieldName];
+		if (!column || !fieldValues?.length) {
+			return;
+		}
 
-		const sqlList = [];
+		const values = [...new Set(fieldValues)];
+		const BATCH_SIZE = 90;
 
-		fieldValues.forEach(value => {
+		for (let i = 0; i < values.length; i += BATCH_SIZE) {
+			const batchValues = values.slice(i, i + BATCH_SIZE);
+			const placeholders = batchValues.map(() => '?').join(', ');
+			const selectKeys = c.env.db.prepare(
+				`SELECT key
+				 FROM attachments
+				 GROUP BY key
+				 HAVING COUNT(*) = SUM(CASE WHEN ${column} IN (${placeholders}) THEN 1 ELSE 0 END)`
+			).bind(...batchValues);
+			const deleteRows = c.env.db.prepare(
+				`DELETE FROM attachments WHERE ${column} IN (${placeholders})`
+			).bind(...batchValues);
 
-			sqlList.push(
+			const [keyResult] = await c.env.db.batch([selectKeys, deleteRows]);
+			const delKeyList = keyResult.results?.map(row => row.key) || [];
 
-				c.env.db.prepare(
-					`SELECT a.key, a.att_id
-						FROM attachments a
-							   JOIN (SELECT key
-									 FROM attachments
-									 GROUP BY key
-									 HAVING COUNT (*) = 1) t
-									ON a.key = t.key
-						WHERE a.${fieldName} = ?;`
-					).bind(value)
-			)
-
-			sqlList.push(c.env.db.prepare(`DELETE FROM attachments WHERE ${fieldName} = ?`).bind(value))
-
-		});
-
-		const attListResult = await c.env.db.batch(sqlList);
-
-		const delKeyList = attListResult.flatMap(r => r.results ? r.results.map(row => row.key) : []);
-
-		if (delKeyList.length > 0) {
-			try {
-				await this.batchDelete(c, delKeyList);
-			} catch (e) {
-				console.error('删除附件文件失败：', e);
+			if (delKeyList.length > 0) {
+				try {
+					await this.batchDelete(c, delKeyList);
+				} catch (e) {
+					console.error('删除附件文件失败：', e);
+				}
 			}
 		}
 

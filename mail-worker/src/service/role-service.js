@@ -156,19 +156,16 @@ const roleService = {
 
 	hasAvailDomainPerm(availDomain, email) {
 
-		availDomain = availDomain.split(',').filter(item => item !== '');
+		availDomain = Array.isArray(availDomain)
+			? availDomain
+			: availDomain.split(',').filter(item => item !== '');
 
 		if (availDomain.length === 0) {
 			return true
 		}
 
-		const availIndex = availDomain.findIndex(item => {
-			const domain = emailUtils.getDomain(email.toLowerCase());
-			const availDomainItem = item.toLowerCase();
-			return domain === availDomainItem
-		})
-
-		return availIndex > -1
+		const domain = emailUtils.getDomain(email.toLowerCase());
+		return availDomain.some(item => domain === item.toLowerCase());
 	},
 
 	selectByName(c, roleName) {
@@ -187,33 +184,24 @@ const roleService = {
 
 	isBanEmail(banEmail, fromEmail) {
 
-		banEmail = banEmail.split(',').filter(item => item !== '');
+		banEmail = Array.isArray(banEmail)
+			? banEmail
+			: banEmail.split(',').filter(item => item !== '');
 
 		if (banEmail.includes('*')) {
 			return true;
 		}
 
+		const normalizedFrom = fromEmail.toLowerCase();
+		const receiveDomain = emailUtils.getDomain(normalizedFrom);
 		for (const item of banEmail) {
-
 			if (verifyUtils.isDomain(item)) {
-
-				const banDomain = item.toLowerCase();
-				const receiveDomain = emailUtils.getDomain(fromEmail.toLowerCase());
-
-				if (banDomain === receiveDomain) {
+				if (item.toLowerCase() === receiveDomain) {
 					return true;
 				}
-
-			} else {
-
-				if (item.toLowerCase() === fromEmail.toLowerCase()) {
-
-					return true;
-
-				}
-
+			} else if (item.toLowerCase() === normalizedFrom) {
+				return true;
 			}
-
 		}
 
 		return false;

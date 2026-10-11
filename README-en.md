@@ -87,6 +87,13 @@ With only one domain, you can create multiple different email addresses, similar
 
 - **File Storage**: [Cloudflare R2](https://developers.cloudflare.com/r2/)
 
+## Cloudflare Static Asset Routing
+
+The deployment configuration serves frontend assets from `dist` directly through Cloudflare. Only `/api/*`, `/static/*`, and `/attachments/*` run through the Worker first. Frontend assets therefore do not consume Worker CPU for each request, while `/static/*` and `/attachments/*` continue to be served from KV by the Worker and API routing remains unchanged.
+
+The backend also reduces work on hot paths without removing features: JWT HMAC keys are reused within a Worker isolate, paginated email requests avoid repeated full-table counts, attachment association and cleanup use indexed/batched queries, HTML parsing is skipped for messages without images, and historical cleanup is processed in bounded batches. Automatic refresh pauses while the browser tab is hidden and resumes when it becomes visible.
+
+
 ## Project Structure
 
 ```

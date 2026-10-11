@@ -851,7 +851,7 @@ function getEmailList(refresh = false) {
     noLoading.value = data.list.length < queryParam.size;
     followLoading.value = data.list.length >= queryParam.size;
 
-    total.value = data.total;
+    if (data.total !== null && data.total !== undefined) total.value = data.total;
   }).finally(() => {
     loading.value = false
     reqLock = false

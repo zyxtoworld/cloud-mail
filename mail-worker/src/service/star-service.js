@@ -46,6 +46,8 @@ const starService = {
 		emailId = Number(emailId) || 0;
 		size = Number(size);
 		full = Number(full) === 1;
+		if (!Number.isFinite(size) || size <= 0) size = 10;
+		if (size > 50) size = 50;
 		const columns = full ? emailListColumns : emailBriefColumns;
 
 		const list = await orm(c).select({
@@ -66,8 +68,14 @@ const starService = {
 		if (full) {
 			const emailIds = list.map(item => item.emailId);
 			const attsList = await attService.selectByEmailIds(c, emailIds);
+			const attByEmailId = new Map();
+			for (const attRow of attsList) {
+				const atts = attByEmailId.get(attRow.emailId) || [];
+				atts.push(attRow);
+				attByEmailId.set(attRow.emailId, atts);
+			}
 			list.forEach(emailRow => {
-				emailRow.attList = attsList.filter(attsRow => attsRow.emailId === emailRow.emailId);
+				emailRow.attList = attByEmailId.get(emailRow.emailId) || [];
 			});
 		} else {
 			list.forEach(emailRow => {

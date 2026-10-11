@@ -21,20 +21,25 @@ export default {
 			 return await kvObjService.toObjResp( { env }, url.pathname.substring(1));
 		 }
 
-		return env.assets.fetch(req);
+		const assetFetch = env.assets?.fetch;
+		if (typeof assetFetch !== 'function') {
+			return new Response('Static assets binding is not configured', { status: 503 });
+		}
+
+		return assetFetch.call(env.assets, req);
 	},
 	email: email,
 	async scheduled(c, env, ctx) {
 		if (c.cron === '*/30 * * * *') {
-			await analysisService.refreshEchartsCache({ env })
+			await analysisService.refreshEchartsCache({ env });
 			return;
 		}
 
-		await verifyRecordService.clearRecord({ env })
-		await userService.resetDaySendCount({ env })
-		await emailService.completeReceiveAll({ env })
-		await emailService.autoClean({ env })
-		await analysisService.refreshEchartsCache({ env })
-		await oauthService.clearNoBindOathUser({ env })
+		await verifyRecordService.clearRecord({ env });
+		await userService.resetDaySendCount({ env });
+		await emailService.completeReceiveAll({ env });
+		await emailService.autoClean({ env });
+		await analysisService.refreshEchartsCache({ env });
+		await oauthService.clearNoBindOathUser({ env });
 	},
 };

@@ -84,7 +84,9 @@ async function latest() {
       continue;
     }
 
-    const latestId = scroll.value.latestEmail?.emailId
+    if (document.hidden) {
+      continue
+    }
 
     if (!scroll.value.firstLoad && autoRefresh > 1) {
       try {

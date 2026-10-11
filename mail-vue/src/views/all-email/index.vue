@@ -315,7 +315,9 @@ async function latest() {
     if (route.name !== 'all-email') {
       continue
     }
-
+    if (document.hidden) {
+      continue
+    }
 
     if (params.type !== 'receive') {
       continue

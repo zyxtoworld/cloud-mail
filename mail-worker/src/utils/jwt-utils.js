@@ -1,5 +1,21 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const keyCache = new Map();
+
+function getJwtKey(secret) {
+	let key = keyCache.get(secret);
+	if (!key) {
+		key = crypto.subtle.importKey(
+			'raw',
+			encoder.encode(secret),
+			{ name: 'HMAC', hash: 'SHA-256' },
+			false,
+			['sign', 'verify']
+		);
+		keyCache.set(secret, key);
+	}
+	return key;
+}
 
 const base64url = (input) => {
 	const str = btoa(String.fromCharCode(...new Uint8Array(input)));
@@ -32,14 +48,7 @@ const jwtUtils = {
 		const payloadStr = base64url(encoder.encode(JSON.stringify(fullPayload)));
 		const data = `${headerStr}.${payloadStr}`;
 
-		const key = await crypto.subtle.importKey(
-			'raw',
-			encoder.encode(c.env.jwt_secret),
-			{ name: 'HMAC', hash: 'SHA-256' },
-			false,
-			['sign']
-		);
-
+		const key = await getJwtKey(c.env.jwt_secret);
 		const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
 		const signatureStr = base64url(signature);
 
@@ -53,14 +62,7 @@ const jwtUtils = {
 			if (!headerB64 || !payloadB64 || !signatureB64) return null;
 
 			const data = `${headerB64}.${payloadB64}`;
-			const key = await crypto.subtle.importKey(
-				'raw',
-				encoder.encode(c.env.jwt_secret),
-				{ name: 'HMAC', hash: 'SHA-256' },
-				false,
-				['verify']
-			);
-
+			const key = await getJwtKey(c.env.jwt_secret);
 			const valid = await crypto.subtle.verify(
 				'HMAC',
 				key,

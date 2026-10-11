@@ -26,7 +26,7 @@ const analysisService = {
 	async refreshEchartsCacheByKey(c, cacheKey) {
 		const params = this.echartsParamsByCacheKey(cacheKey);
 		const data = await this.queryEcharts(c, params);
-		await c.env.kv.put(cacheKey, JSON.stringify(data));
+		await c.env.kv.put(cacheKey, JSON.stringify(data), { expirationTtl: 2 * 60 * 60 });
 		return data;
 	},
 
@@ -36,8 +36,9 @@ const analysisService = {
 		}
 
 		const { keys } = await c.env.kv.list({ prefix: kvConst.ANALYSIS_ECHARTS });
-
-		await Promise.all(keys.map(key => this.refreshEchartsCacheByKey(c, key.name)));
+		for (let i = 0; i < keys.length; i += 4) {
+			await Promise.all(keys.slice(i, i + 4).map(key => this.refreshEchartsCacheByKey(c, key.name)));
+		}
 	},
 
 	async queryEcharts(c, params) {
@@ -109,11 +110,11 @@ const analysisService = {
 			return today.subtract(i, 'day').format('YYYY-MM-DD');
 		}).reverse();
 
-		return  previousDays.map(day => {
-			const index = data.findIndex(item => item.date === day)
-			const total = index > - 1 ? data[index].total : 0
-			return {date: day,total}
-		})
+		const totalsByDay = new Map(data.map(item => [item.date, item.total]));
+		return previousDays.map(day => ({
+			date: day,
+			total: totalsByDay.get(day) ?? 0
+		}));
 
 	},
 

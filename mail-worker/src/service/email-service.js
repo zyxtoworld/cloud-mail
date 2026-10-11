@@ -28,7 +28,7 @@ const emailService = {
 
 	async list(c, params, userId) {
 
-		let { emailId, type, accountId, size, timeSort, allReceive, full } = params;
+		let { emailId, type, accountId, size, timeSort, allReceive, full, includeTotal } = params;
 
 		size = Number(size);
 		type = Number(type);
@@ -66,7 +66,10 @@ const emailService = {
 		}
 
 		const filters = this.emailListFilters({ userId, accountId, type, allReceive, emailId, timeSort });
-		const countFilters = this.emailListFilters({ userId, accountId, type, allReceive, withCursor: false });
+		const shouldCountTotal = includeTotal === undefined || (!emailId && includeTotal !== '0');
+		const countFilters = shouldCountTotal
+			? this.emailListFilters({ userId, accountId, type, allReceive, withCursor: false })
+			: null;
 		const columns = full ? emailListColumns : emailBriefColumns;
 
 		const query = orm(c)
@@ -96,13 +99,15 @@ const emailService = {
 
 		const listQuery = query.limit(size).all();
 
-		const totalQuery = orm(c).select({ total: count() }).from(email)
-			.innerJoin(
-				account,
-				eq(account.accountId, email.accountId)
-			)
-			.where(and(...countFilters))
-			.get();
+		const totalQuery = shouldCountTotal
+			? orm(c).select({ total: count() }).from(email)
+				.innerJoin(
+					account,
+					eq(account.accountId, email.accountId)
+				)
+				.where(and(...countFilters))
+				.get()
+			: Promise.resolve(null);
 
 		const latestEmailQuery = orm(c).select({
 			emailId: email.emailId,
@@ -138,7 +143,7 @@ const emailService = {
 			}
 		}
 
-		return { list, total: totalRow.total, latestEmail };
+		return { list, total: totalRow?.total ?? null, latestEmail };
 	},
 
 	toListText(item) {
@@ -646,16 +651,16 @@ const emailService = {
 		let accountList = await orm(c).select().from(account).where(inArray(account.email, receiveEmail)).all();
 
 		// 对于含+未精确匹配的收件人，获取基础地址账号
+		const exactEmails = new Set(accountList.map(accountRow => accountRow.email));
 		const plusEmails = receiveEmail.filter(
-			e => e.includes('+') && !accountList.some(a => a.email === e)
+			e => e.includes('+') && !exactEmails.has(e)
 		);
 		const baseAccounts = [];
 		if (plusEmails.length > 0) {
 			const baseEmails = [...new Set(
 				plusEmails.map(e => emailUtils.getBaseEmail(e)).filter(Boolean)
 			)];
-			const existing = new Set(accountList.map(a => a.email));
-			const needed = baseEmails.filter(e => !existing.has(e));
+			const needed = baseEmails.filter(e => !exactEmails.has(e));
 			if (needed.length > 0) {
 				const rows = await orm(c).select().from(account)
 					.where(inArray(account.email, needed)).all();
@@ -665,10 +670,16 @@ const emailService = {
 
 		// 合并精确匹配和基础地址匹配的账号用于权限查询
 		const allAccounts = [...accountList, ...baseAccounts];
+		const accountByEmail = new Map(allAccounts.map(accountRow => [accountRow.email, accountRow]));
 
 		//查询所有收件人权限身份
 		const userIds = allAccounts.map(accountRow => accountRow.userId);
-		let roleList = await roleService.selectByUserIds(c, userIds);
+		const roleList = await roleService.selectByUserIds(c, userIds);
+		const roleByUserId = new Map(roleList.map(roleRow => [roleRow.userId, {
+			...roleRow,
+			banEmail: roleRow.banEmail.split(',').filter(Boolean),
+			availDomain: roleRow.availDomain.split(',').filter(Boolean)
+		}]));
 
 		//封装数据库准备保存到数据库
 		const emailDataList = [];
@@ -683,12 +694,12 @@ const emailService = {
 			emailValues.toName = emailUtils.getName(email);
 			emailValues.emailId = null;
 
-			let accountRow = allAccounts.find(accountRow => accountRow.email === email);
+			let accountRow = accountByEmail.get(email);
 
 			// 精确匹配不到时回退到主地址（去掉 +tag）
 			if (!accountRow && email.includes('+')) {
 				const baseEmail = emailUtils.getBaseEmail(email);
-				accountRow = allAccounts.find(accountRow => accountRow.email === baseEmail);
+				accountRow = accountByEmail.get(baseEmail);
 			}
 
 			//如果收件人存在就把邮件信息改成收件人的
@@ -700,7 +711,7 @@ const emailService = {
 				emailValues.type = emailConst.type.RECEIVE;
 				emailValues.status = emailConst.status.RECEIVE;
 
-				const roleRow = roleList.find(roleRow => roleRow.userId === accountRow.userId);
+				const roleRow = roleByUserId.get(accountRow.userId);
 
 				let { banEmail, availDomain } = roleRow;
 
@@ -780,39 +791,42 @@ const emailService = {
 			return ''
 		}
 
+		if (!/<img\b/i.test(content)) {
+			return content;
+		}
+
 		const { document } = parseHTML(content);
-
 		const images = Array.from(document.querySelectorAll('img'));
-
-		const useAtts = []
+		const useAtts = [];
+		const cidAttById = new Map();
+		for (const cidAtt of cidAttList || []) {
+			if (cidAtt.contentId) {
+				const cid = cidAtt.contentId.replace(/^<|>$/g, '');
+				if (!cidAttById.has(cid)) {
+					cidAttById.set(cid, cidAtt);
+				}
+			}
+		}
+		const ossDomain = domainUtils.toOssDomain(r2domain);
 
 		for (const img of images) {
-
 			const src = img.getAttribute('src');
-			if (src && src.startsWith('cid:') && cidAttList) {
-
-				const cid = src.replace(/^cid:/, '');
-				const attCidIndex = cidAttList.findIndex(cidAtt => cidAtt.contentId.replace(/^<|>$/g, '') === cid);
-
-				if (attCidIndex > -1) {
-					const cidAtt = cidAttList[attCidIndex];
+			if (src?.startsWith('cid:')) {
+				const cidAtt = cidAttById.get(src.replace(/^cid:/, ''));
+				if (cidAtt) {
 					img.setAttribute('src', '{{domain}}' + cidAtt.key);
-					useAtts.push(cidAtt)
+					useAtts.push(cidAtt);
 				}
-
 			}
 
-			r2domain = domainUtils.toOssDomain(r2domain)
-
-			if (src && src.startsWith(r2domain + '/')) {
-				img.setAttribute('src', src.replace(r2domain + '/', '{{domain}}'));
+			if (src && ossDomain && src.startsWith(ossDomain + '/')) {
+				img.setAttribute('src', src.replace(ossDomain + '/', '{{domain}}'));
 			}
-
 		}
 
 		useAtts.forEach(att => {
-			att.type = attConst.type.EMBED
-		})
+			att.type = attConst.type.EMBED;
+		});
 
 		return document.toString();
 	},
@@ -897,7 +911,7 @@ const emailService = {
 
 	async allList(c, params) {
 
-		let { emailId, size, name, subject, accountEmail, userEmail, type, timeSort, full } = params;
+		let { emailId, size, name, subject, accountEmail, userEmail, type, timeSort, full, includeTotal } = params;
 
 		size = Number(size);
 		emailId = Number(emailId) || 0;
@@ -923,7 +937,10 @@ const emailService = {
 		full = full === 1;
 
 		const filters = this.allEmailListFilters({ emailId, name, subject, accountEmail, userEmail, type, timeSort });
-		const countFilters = this.allEmailListFilters({ emailId, name, subject, accountEmail, userEmail, type, timeSort, withCursor: false });
+		const shouldCountTotal = includeTotal === undefined || (!emailId && includeTotal !== '0');
+		const countFilters = shouldCountTotal
+			? this.allEmailListFilters({ emailId, name, subject, accountEmail, userEmail, type, timeSort, withCursor: false })
+			: null;
 		const columns = full ? emailListColumns : emailBriefColumns;
 
 		const query = orm(c).select({ ...columns, userEmail: user.email })
@@ -932,14 +949,16 @@ const emailService = {
 			.where(and(...filters));
 
 		// count 不搜用户时无需 join user
-		const queryCount = userEmail
-			? orm(c).select({ total: count() })
-				.from(email)
-				.leftJoin(user, eq(email.userId, user.userId))
-				.where(and(...countFilters))
-			: orm(c).select({ total: count() })
-				.from(email)
-				.where(and(...countFilters));
+		const queryCount = shouldCountTotal
+			? userEmail
+				? orm(c).select({ total: count() })
+					.from(email)
+					.leftJoin(user, eq(email.userId, user.userId))
+					.where(and(...countFilters))
+				: orm(c).select({ total: count() })
+					.from(email)
+					.where(and(...countFilters))
+			: null;
 
 		if (timeSort) {
 			query.orderBy(asc(email.emailId));
@@ -948,7 +967,7 @@ const emailService = {
 		}
 
 		const listQuery = query.limit(size).all();
-		const totalQuery = queryCount.get();
+		const totalQuery = queryCount ? queryCount.get() : Promise.resolve(null);
 		const latestEmailQuery = orm(c).select({
 			emailId: email.emailId,
 			accountId: email.accountId,
@@ -973,7 +992,7 @@ const emailService = {
 			}
 		}
 
-		return { list: list, total: totalRow.total, latestEmail };
+		return { list: list, total: totalRow?.total ?? null, latestEmail };
 	},
 
 	async allEmailLatest(c, params) {
@@ -1005,9 +1024,15 @@ const emailService = {
 
 			const attList = await attService.selectByEmailIds(c, emailIds);
 
+			const attByEmailId = new Map();
+			for (const attRow of attList) {
+				const atts = attByEmailId.get(attRow.emailId) || [];
+				atts.push(attRow);
+				attByEmailId.set(attRow.emailId, atts);
+			}
+
 			list.forEach(emailRow => {
-				const atts = attList.filter(attRow => attRow.emailId === emailRow.emailId);
-				emailRow.attList = atts;
+				emailRow.attList = attByEmailId.get(emailRow.emailId) || [];
 			});
 		}
 	},
@@ -1024,16 +1049,14 @@ const emailService = {
 	},
 
 	async completeReceiveAll(c) {
-		// 用 EXISTS 走 status=6 部分索引 + account 主键；避免 IN (SELECT account_id FROM account) 触发全盘扫描
+		// 一次更新完成中断收件：仍绑定账号的邮件收件成功，其余标记为无收件人。
 		await c.env.db.prepare(
 			`UPDATE email
-			 SET status = ${emailConst.status.RECEIVE}
-			 WHERE status = ${emailConst.status.SAVING}
-			   AND EXISTS (SELECT 1 FROM account WHERE account.account_id = email.account_id)`
-		).run();
-		await c.env.db.prepare(
-			`UPDATE email
-			 SET status = ${emailConst.status.NOONE}
+			 SET status = CASE
+				 WHEN EXISTS (SELECT 1 FROM account WHERE account.account_id = email.account_id)
+				 THEN ${emailConst.status.RECEIVE}
+				 ELSE ${emailConst.status.NOONE}
+			 END
 			 WHERE status = ${emailConst.status.SAVING}`
 		).run();
 	},
@@ -1062,31 +1085,23 @@ const emailService = {
 			excludeUserIds = rows.map(row => row.userId);
 		}
 
+		// 每次定时任务只处理一批，避免历史邮件过多时超过免费套餐 CPU/执行时间限制；下次任务继续处理。
 		const batchSize = 95;
+		const conditions = [lt(email.createTime, cutoff)];
+		if (excludeUserIds.length) {
+			conditions.push(notInArray(email.userId, excludeUserIds));
+		}
 
-		while (true) {
-			const conditions = [lt(email.createTime, cutoff)];
-			if (excludeUserIds.length) {
-				conditions.push(notInArray(email.userId, excludeUserIds));
-			}
+		const rows = await orm(c)
+			.select({ emailId: email.emailId })
+			.from(email)
+			.where(and(...conditions))
+			.limit(batchSize)
+			.all();
 
-			const rows = await orm(c)
-				.select({ emailId: email.emailId })
-				.from(email)
-				.where(and(...conditions))
-				.limit(batchSize)
-				.all();
-
-			if (!rows.length) {
-				break;
-			}
-
+		if (rows.length) {
 			const emailIds = rows.map(row => row.emailId);
 			await this.physicsDelete(c, { emailIds: emailIds.join(',') });
-
-			if (rows.length < batchSize) {
-				break;
-			}
 		}
 	},
 
