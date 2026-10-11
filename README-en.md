@@ -91,7 +91,7 @@ With only one domain, you can create multiple different email addresses, similar
 
 The deployment configuration serves frontend assets from `dist` directly through Cloudflare. Only `/api/*`, `/static/*`, and `/attachments/*` run through the Worker first. Frontend assets therefore do not consume Worker CPU for each request, while `/static/*` and `/attachments/*` continue to be served from KV by the Worker and API routing remains unchanged.
 
-The backend also reduces work on hot paths without removing features: JWT HMAC keys are reused within a Worker isolate, paginated email requests avoid repeated full-table counts, attachment association and cleanup use indexed/batched queries, HTML parsing is skipped for messages without images, and historical cleanup is processed in bounded batches. Automatic cleanup runs every 5 minutes and processes at most 95 emails per run to match the observed receive rate without risking a single long-running invocation. Automatic refresh pauses while the browser tab is hidden and resumes when it becomes visible.
+The backend also reduces work on hot paths without removing features: JWT HMAC keys are reused within a Worker isolate, paginated email requests avoid repeated full-table counts, attachment association and cleanup use indexed/batched queries, HTML parsing is skipped for messages without images, and historical cleanup is processed in bounded batches. Automatic cleanup remains part of the hourly maintenance task; it uses the previous hour's receive count to run multiple safe batches of 95 emails, up to 950 emails per run. Automatic refresh pauses while the browser tab is hidden and resumes when it becomes visible.
 
 
 ## Project Structure

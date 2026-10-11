@@ -1069,7 +1069,10 @@ const emailService = {
 			return;
 		}
 
-		const cutoff = dayjs().subtract(days, 'day').format('YYYY-MM-DD HH:mm:ss');
+		const now = dayjs();
+		const nowText = now.format('YYYY-MM-DD HH:mm:ss');
+		const cutoff = now.subtract(days, 'day').format('YYYY-MM-DD HH:mm:ss');
+		const rateCutoff = now.subtract(1, 'hour').format('YYYY-MM-DD HH:mm:ss');
 		const excludeEmails = String(autoCleanExclude || '')
 			.split(/[,，]/)
 			.map(item => item.trim())
@@ -1085,23 +1088,48 @@ const emailService = {
 			excludeUserIds = rows.map(row => row.userId);
 		}
 
-		// 每次定时任务只处理一批，避免历史邮件过多时超过免费套餐 CPU/执行时间限制；下次任务继续处理。
-		const batchSize = 95;
-		const conditions = [lt(email.createTime, cutoff)];
+		const rateConditions = [
+			gte(email.createTime, rateCutoff),
+			lt(email.createTime, nowText)
+		];
+		const cleanConditions = [lt(email.createTime, cutoff)];
 		if (excludeUserIds.length) {
-			conditions.push(notInArray(email.userId, excludeUserIds));
+			rateConditions.push(notInArray(email.userId, excludeUserIds));
+			cleanConditions.push(notInArray(email.userId, excludeUserIds));
 		}
 
-		const rows = await orm(c)
-			.select({ emailId: email.emailId })
+		const recentRow = await orm(c)
+			.select({ total: count() })
 			.from(email)
-			.where(and(...conditions))
-			.limit(batchSize)
-			.all();
+			.where(and(...rateConditions))
+			.get();
+		const recentCount = Number(recentRow?.total) || 0;
 
-		if (rows.length) {
+		// 保持单批 95 封的安全边界；根据最近一小时的收件量，在同一次每小时任务中执行多个小批次。
+		const batchSize = 95;
+		const maxBatchCount = 10;
+		let remaining = Math.min(batchSize * maxBatchCount, Math.max(batchSize, recentCount * 2));
+
+		while (remaining > 0) {
+			const currentBatchSize = Math.min(batchSize, remaining);
+			const rows = await orm(c)
+				.select({ emailId: email.emailId })
+				.from(email)
+				.where(and(...cleanConditions))
+				.orderBy(asc(email.emailId))
+				.limit(currentBatchSize)
+				.all();
+
+			if (!rows.length) {
+				break;
+			}
+
 			const emailIds = rows.map(row => row.emailId);
 			await this.physicsDelete(c, { emailIds: emailIds.join(',') });
+			remaining -= rows.length;
+			if (rows.length < currentBatchSize) {
+				break;
+			}
 		}
 	},
 

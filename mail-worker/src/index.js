@@ -30,24 +30,11 @@ export default {
 	},
 	email: email,
 	async scheduled(c, env, ctx) {
-		const minute = new Date(c.scheduledTime).getUTCMinutes();
-		const isHourly = minute === 0;
-		const isAnalysisRun = minute % 30 === 0;
-
-		if (isHourly) {
-			await verifyRecordService.clearRecord({ env });
-			await userService.resetDaySendCount({ env });
-			await emailService.completeReceiveAll({ env });
-		}
-
+		await verifyRecordService.clearRecord({ env });
+		await userService.resetDaySendCount({ env });
+		await emailService.completeReceiveAll({ env });
 		await emailService.autoClean({ env });
-
-		if (isAnalysisRun) {
-			await analysisService.refreshEchartsCache({ env });
-		}
-
-		if (isHourly) {
-			await oauthService.clearNoBindOathUser({ env });
-		}
+		await analysisService.refreshEchartsCache({ env });
+		await oauthService.clearNoBindOathUser({ env });
 	},
 };
