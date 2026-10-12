@@ -30,8 +30,6 @@ export default {
 	},
 	email: email,
 	async scheduled(c, env, ctx) {
-		const scheduledTime = c.scheduledTime ? new Date(c.scheduledTime) : new Date();
-		if (scheduledTime.getUTCMinutes() !== 0) return;
 		await verifyRecordService.clearRecord({ env });
 		await userService.resetDaySendCount({ env });
 		await emailService.completeReceiveAll({ env });
