@@ -1,5 +1,5 @@
 <template>
-  <div class="header" :class="!hasPerm('email:send') ? 'not-send' : ''">
+  <div class="header" :class="{ 'not-send': !hasPerm('email:send') }">
     <div class="header-btn">
       <hanburger @click="changeAside"></hanburger>
       <span class="breadcrumb-item">{{ $t(route.meta.title) }}</span>
@@ -9,18 +9,21 @@
         <Icon icon="material-symbols:edit-outline-sharp" width="22" height="22"/>
       </div>
     </div>
+    <email-search
+      v-if="route.meta.name === 'email'"
+      :store="emailStore"
+      :search-options="inboxSearchOptions"
+      :class="{ 'account-show': accountPanelShow }"
+    />
+    <email-search
+      v-else-if="route.meta.name === 'send'"
+      :store="sendStore"
+      :search-options="sentSearchOptions"
+      :class="{ 'account-show': accountPanelShow }"
+    />
     <div class="toolbar">
-      <div v-if="uiStore.dark" class="sun-icon icon-item" @click="openDark($event)">
-        <Icon icon="mingcute:sun-fill"/>
-      </div>
-      <div v-else class="dark-icon icon-item" @click="openDark($event)">
-        <Icon icon="solar:moon-linear"/>
-      </div>
-      <div class="notice icon-item" @click="openNotice">
-        <Icon icon="streamline-plump:announcement-megaphone"/>
-      </div>
-      <el-dropdown ref="userinfoRef" @visible-change="e => userInfoShow = e" :teleported="false" popper-class="detail-dropdown">
-        <div class="avatar" @click="userInfoHide" >
+      <el-dropdown trigger="click" :teleported="false" popper-class="detail-dropdown">
+        <div class="avatar">
           <div class="avatar-text">
             <div>{{ formatName(userStore.user.email) }}</div>
           </div>
@@ -85,15 +88,30 @@ import {useSettingStore} from "@/store/setting.js";
 import {hasPerm} from "@/perm/perm.js"
 import {useI18n} from "vue-i18n";
 import {setExtend} from "@/utils/day.js"
+import emailSearch from '@/components/email-search/index.vue'
+import {useEmailStore} from '@/store/email.js'
+import {useSendStore} from '@/store/send.js'
 
 const {t} = useI18n();
 const route = useRoute();
 const settingStore = useSettingStore();
 const userStore = useUserStore();
 const uiStore = useUiStore();
+const emailStore = useEmailStore()
+const sendStore = useSendStore()
 const logoutLoading = ref(false)
-const userInfoShow = ref(false)
-const userinfoRef = ref({})
+const inboxSearchOptions = computed(() => [
+  {label: t('titleDesc'), type: 'subject'},
+  {label: t('searchSummaryContent'), type: 'content'},
+  {label: t('sender'), type: 'sender'},
+  {label: t('searchSenderAddress'), type: 'senderAddress'},
+])
+const sentSearchOptions = computed(() => [
+  {label: t('titleDesc'), type: 'subject'},
+  {label: t('searchSummaryContent'), type: 'content'},
+  {label: t('searchRecipientAddress'), type: 'recipientAddress'},
+])
+const accountPanelShow = computed(() => uiStore.accountShow && hasPerm('account:query'))
 
 const accountCount = computed(() => {
   return userStore.user.role.accountCount
@@ -156,14 +174,6 @@ const sendCount = computed(() => {
   return userStore.user.sendCount + '/' + userStore.user.role.sendCount
 })
 
-function userInfoHide(e) {
-    if (userInfoShow.value) {
-        userinfoRef.value.handleClose()
-    } else {
-        userinfoRef.value.handleOpen()
-    }
-}
-
 async function copyEmail(email) {
   try {
     await navigator.clipboard.writeText(email);
@@ -185,51 +195,6 @@ async function copyEmail(email) {
 function changeLang(lang) {
   setExtend(lang === 'en' ? 'en' : 'zh-cn')
   settingStore.lang = lang
-}
-
-function openNotice() {
-  uiStore.showNotice()
-}
-
-function openDark(e) {
-
-  const nextIsDark = !uiStore.dark
-  const root = document.documentElement
-
-  if (!document.startViewTransition) {
-    switchDark(nextIsDark, root);
-    return
-  }
-
-  const x = e.clientX
-  const y = e.clientY
-
-  const maxX = Math.max(x, window.innerWidth - x)
-  const maxY = Math.max(y, window.innerHeight - y)
-  const endRadius = Math.hypot(maxX, maxY)
-
-  // 标记切换目标，供 CSS 选择器使用
-  root.setAttribute('data-theme-to', nextIsDark ? 'dark' : 'light')
-  root.style.setProperty('--vt-x', `${x}px`)
-  root.style.setProperty('--vt-y', `${y}px`)
-  root.style.setProperty('--vt-end-radius', `${endRadius + 10}px`)
-
-  const transition = document.startViewTransition(() => {
-    switchDark(nextIsDark, root);
-  })
-
-  transition.finished.finally(() => {
-    // 清理标记
-    root.removeAttribute('data-theme-to')
-  })
-}
-
-function switchDark(nextIsDark, root) {
-  root.setAttribute('class', nextIsDark ? 'dark' : '')
-  const metaTag = document.getElementById('theme-color-meta');
-  const isMobile =  !window.matchMedia("(pointer: fine) and (hover: hover)").matches;
-  metaTag.setAttribute('content', nextIsDark ? (isMobile ? '#141414' : '#000000') : (isMobile ? '#191A23' : '#F1F1F1'));
-  uiStore.dark = nextIsDark
 }
 
 function openSend() {
@@ -362,10 +327,26 @@ function formatName(email) {
   height: 100%;
   gap: 10px;
   grid-template-columns: auto auto 1fr;
+  position: relative;
 }
 
 .header.not-send {
   grid-template-columns: auto 1fr;
+}
+
+@media (max-width: 767px) {
+  .header {
+    display: flex;
+    align-items: center;
+  }
+
+  .header-btn {
+    flex: 1;
+  }
+
+  .toolbar {
+    flex-shrink: 0;
+  }
 }
 
 .writer-box {
@@ -392,6 +373,21 @@ function formatName(email) {
       font-weight: bold;;
     }
   }
+
+  @media (max-width: 767px) {
+    margin-left: 0;
+    flex-shrink: 0;
+
+    .writer {
+      box-sizing: border-box;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      border: 1px solid var(--el-color-primary);
+      color: var(--el-color-white);
+      background: var(--el-color-primary);
+    }
+  }
 }
 
 .header-btn {
@@ -413,6 +409,7 @@ function formatName(email) {
 .toolbar {
   display: flex;
   justify-content: end;
+  align-items: center;
   gap: 15px;
   @media (max-width: 767px) {
     gap: 10px;
@@ -433,29 +430,17 @@ function formatName(email) {
     background: var(--base-fill);
   }
 
-  .notice {
-    font-size: 22px;
-    margin-right: 4px;
-  }
-
-  .dark-icon {
-    font-size: 20px;
-  }
-
-  .sun-icon {
-    font-size: 24px;
-  }
-
   .avatar {
     display: flex;
     align-items: center;
     cursor: pointer;
 
     .avatar-text {
+      box-sizing: border-box;
       background: var(--el-bg-color);
       color: var(--el-text-color-primary);
-      height: 30px;
-      width: 30px;
+      height: 32px;
+      width: 32px;
       display: flex;
       justify-content: center;
       align-items: center;

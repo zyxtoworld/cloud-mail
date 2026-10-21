@@ -22,7 +22,7 @@ const routes = [
                 }
             },
             {
-                path: '/mail',
+                path: '/messages',
                 name: 'content',
                 component: () => import('@/views/content/index.vue'),
                 meta: {
