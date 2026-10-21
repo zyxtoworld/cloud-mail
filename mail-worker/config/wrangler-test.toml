@@ -1,5 +1,5 @@
 name = "test-mail"
-main = "src/index.js"
+main = "../src/index.js"
 compatibility_date = "2025-06-04"
 keep_vars = true
 
@@ -25,7 +25,7 @@ binding = "ai"
 
 [assets]
 binding = "assets"		#静态资源绑定名默认不可修改
-directory = "./dist"	#前端vue项目打包的静态资源存放位置,默认dist
+directory = "../dist"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*", "/static/*", "/attachments/*"]
 

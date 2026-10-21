@@ -3,8 +3,8 @@
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
-		"dev": "wrangler dev --config wrangler-dev.toml",
-		"test": "wrangler deploy --config wrangler-test.toml",
+		"dev": "wrangler dev --config config/wrangler-dev.toml",
+		"test": "wrangler deploy --config config/wrangler-test.toml",
 		"deploy": "wrangler deploy",
 		"start": "wrangler dev"
 	},

@@ -110,7 +110,31 @@ The backend also reduces work on hot paths without removing features: JWT HMAC k
 
 ```
 cloud-mail
-├── mail-worker                    # Backend worker project
+├── mail-worker				    # Backend worker project
+│   ├── src
+│   │   ├── api                         # API layer
+│   │   ├── const                       # Project constants
+│   │   ├── dao                         # Data access layer
+│   │   ├── email                       # Email processing and handling
+│   │   ├── entity                      # Database entities
+│   │   ├── error                       # Custom exceptions
+│   │   ├── hono                        # Web framework, middleware, error handling
+│   │   ├── i18n                        # Internationalization
+│   │   ├── init                        # Database and cache initialization
+│   │   ├── model                       # Response data models
+│   │   ├── security                    # Authentication and authorization
+│   │   ├── service                     # Business logic layer
+│   │   ├── template                    # Message templates
+│   │   ├── utils                       # Utility functions
+│   │   └── index.js                    # Entry point
+│   ├── package.json                    # Project dependencies
+│   ├── config                         # Development, test, and CI deployment configs
+│   │   ├── wrangler-dev.toml
+│   │   ├── wrangler-test.toml
+│   │   └── wrangler-action.toml
+│   └── wrangler.toml                   # Production project configuration
+│
+├─ mail-vue				        # Frontend Vue project
 │   ├── src
 │   │   ├── api                    # API layer
 │   │   ├── const                  # Project constants

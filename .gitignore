@@ -1,4 +1,5 @@
-logs
+# Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -6,23 +7,23 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist-ssr
-*.local
-dist
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
 
+# Local environment and tool state
+*.local
+.wrangler/
+.venv/
+
+# IDE and operating system files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
-mail-vue/node_modules
-mail-vue/dist
-.wrangler
-.venv
-git-tools.js

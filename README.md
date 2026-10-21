@@ -116,7 +116,31 @@
 
 ```
 cloud-mail
-├── mail-worker                    # worker后端项目
+├── mail-worker				    # worker后端项目
+│   ├── src
+│   │   ├── api                         # api接口层
+│   │   ├── const                       # 项目常量
+│   │   ├── dao                         # 数据访问层
+│   │   ├── email                       # 邮件处理接收
+│   │   ├── entity                      # 数据库实体
+│   │   ├── error                       # 自定义异常
+│   │   ├── hono                        # web框架配置、拦截器、全局异常等
+│   │   ├── i18n                        # 语言国际化
+│   │   ├── init                        # 数据库缓存初始化
+│   │   ├── model                       # 响应体数据封装
+│   │   ├── security                    # 身份权限认证
+│   │   ├── service                     # 业务服务层
+│   │   ├── template                    # 消息模板
+│   │   ├── utils                       # 工具类
+│   │   └── index.js                    # 入口文件
+│   ├── package.json                    # 项目依赖
+│   ├── config                         # 开发、测试及 CI 部署配置
+│   │   ├── wrangler-dev.toml
+│   │   ├── wrangler-test.toml
+│   │   └── wrangler-action.toml
+│   └── wrangler.toml                   # 生产项目配置
+│
+├── mail-vue				    # vue前端项目
 │   ├── src
 │   │   ├── api                    # api接口层
 │   │   ├── const                  # 项目常量

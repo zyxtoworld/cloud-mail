@@ -1,5 +1,5 @@
 name = "cloud-mail-dev"
-main = "src/index.js"
+main = "../src/index.js"
 compatibility_date = "2025-06-04"
 keep_vars = true
 
@@ -27,7 +27,7 @@ id = "2io01d4b299e481b9de060ece9e7785c"
 
 [assets]
 binding = "assets"
-directory = "./dist"
+directory = "../dist"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*", "/static/*", "/attachments/*"]
 
