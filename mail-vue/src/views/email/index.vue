@@ -8,6 +8,7 @@
                :star-cancel="starCancel"
                :email-read="emailRead"
                :show-unread="true"
+               :highlight-text="emailStore.searchParams.text"
                actionLeft="4px"
                @jump="jumpContent"
   >
@@ -59,7 +60,7 @@ function jumpContent(email) {
   emailStore.contentData.showUnread = true
   emailStore.contentData.showStar = true
   emailStore.contentData.showReply = true
-  router.push('/messages')
+  router.push({name: 'content', params: {mailbox: 'inbox'}})
 }
 
 const existIds = new Set();

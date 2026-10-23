@@ -1,28 +1,45 @@
 <template>
-  <div class="header" :class="{ 'not-send': !hasPerm('email:send') }">
+  <div class="header">
     <div class="header-btn">
       <hanburger @click="changeAside"></hanburger>
       <span class="breadcrumb-item">{{ $t(route.meta.title) }}</span>
     </div>
-    <div v-perm="'email:send'" class="writer-box" @click="openSend">
-      <div class="writer">
-        <Icon icon="material-symbols:edit-outline-sharp" width="22" height="22"/>
-      </div>
+    <div v-perm="'email:send'" class="writer-box">
+      <el-button
+        class="writer"
+        size="default"
+        :aria-label="$t('compose')"
+        @click="openSend"
+      >
+        <el-icon :size="21">
+          <Icon icon="material-symbols:edit-outline-sharp"/>
+        </el-icon>
+      </el-button>
     </div>
     <email-search
-      v-if="route.meta.name === 'email'"
+      v-if="showInboxSearch"
       :store="emailStore"
       :search-options="inboxSearchOptions"
       :class="{ 'account-show': accountPanelShow }"
+      @search="returnToList('email')"
+      @reset="returnToList('email')"
     />
     <email-search
-      v-else-if="route.meta.name === 'send'"
+      v-else-if="showSentSearch"
       :store="sendStore"
       :search-options="sentSearchOptions"
       :class="{ 'account-show': accountPanelShow }"
+      @search="returnToList('send')"
+      @reset="returnToList('send')"
     />
     <div class="toolbar">
-      <el-dropdown trigger="click" :teleported="false" popper-class="detail-dropdown">
+      <el-dropdown
+        ref="userDropdownRef"
+        trigger="click"
+        :teleported="false"
+        popper-class="detail-dropdown"
+        @visible-change="userCardVisible = $event"
+      >
         <div class="avatar">
           <div class="avatar-text">
             <div>{{ formatName(userStore.user.email) }}</div>
@@ -83,7 +100,7 @@ import {Icon} from "@iconify/vue";
 import {useUiStore} from "@/store/ui.js";
 import {useUserStore} from "@/store/user.js";
 import {useRoute} from "vue-router";
-import {computed, ref} from "vue";
+import {computed, onBeforeUnmount, onMounted, ref} from "vue";
 import {useSettingStore} from "@/store/setting.js";
 import {hasPerm} from "@/perm/perm.js"
 import {useI18n} from "vue-i18n";
@@ -100,6 +117,10 @@ const uiStore = useUiStore();
 const emailStore = useEmailStore()
 const sendStore = useSendStore()
 const logoutLoading = ref(false)
+const userDropdownRef = ref(null)
+const userCardVisible = ref(false)
+const outsidePointerEvents = ['mousedown', 'pointerup', 'mouseup', 'click', 'pointercancel']
+let blockOutsideClick = false
 const inboxSearchOptions = computed(() => [
   {label: t('titleDesc'), type: 'subject'},
   {label: t('searchSummaryContent'), type: 'content'},
@@ -112,6 +133,21 @@ const sentSearchOptions = computed(() => [
   {label: t('searchRecipientAddress'), type: 'recipientAddress'},
 ])
 const accountPanelShow = computed(() => uiStore.accountShow && hasPerm('account:query'))
+const showInboxSearch = computed(() =>
+  route.meta.name === 'email' || isMailboxDetail('inbox')
+)
+const showSentSearch = computed(() =>
+  route.meta.name === 'send' || isMailboxDetail('sent')
+)
+
+function isMailboxDetail(mailbox) {
+  return route.meta.name === 'content' && route.params.mailbox === mailbox
+}
+
+function returnToList(listName) {
+  if (route.meta.name !== 'content') return
+  router.push({name: listName})
+}
 
 const accountCount = computed(() => {
   return userStore.user.role.accountCount
@@ -218,6 +254,47 @@ function clickLogout() {
 function formatName(email) {
   return email[0]?.toUpperCase() || ''
 }
+
+function isInsideUserCard(target) {
+  const element = target instanceof Element ? target : target?.parentElement
+  if (!(element instanceof Element)) return false
+  if (userDropdownRef.value?.$el?.contains(element)) return true
+  return !!element.closest('.detail-dropdown')
+}
+
+function handleUserCardPointerDown(event) {
+  blockOutsideClick = userCardVisible.value && !isInsideUserCard(event.target)
+  if (!blockOutsideClick) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  userDropdownRef.value?.handleClose()
+}
+
+function handleUserCardPointerEvent(event) {
+  if (!blockOutsideClick) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.type === 'pointerup' || event.type === 'pointercancel') {
+    setTimeout(() => {
+      blockOutsideClick = false
+    })
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleUserCardPointerDown, true)
+  outsidePointerEvents.forEach(type => {
+    document.addEventListener(type, handleUserCardPointerEvent, true)
+  })
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleUserCardPointerDown, true)
+  outsidePointerEvents.forEach(type => {
+    document.removeEventListener(type, handleUserCardPointerEvent, true)
+  })
+})
 
 </script>
 <style>
@@ -326,12 +403,8 @@ function formatName(email) {
   display: grid;
   height: 100%;
   gap: 10px;
-  grid-template-columns: auto auto 1fr;
-  position: relative;
-}
-
-.header.not-send {
   grid-template-columns: auto 1fr;
+  position: relative;
 }
 
 @media (max-width: 767px) {
@@ -350,42 +423,30 @@ function formatName(email) {
 }
 
 .writer-box {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 5px;
+  display: none;
 
-  .writer {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    color: #ffffff;
-    background: linear-gradient(135deg, #1890ff, #3a80dd);
-    transition: all 0.3s ease;
+  @media (max-width: 767px) {
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-
-    .writer-text {
-      margin-left: 15px;
-      font-size: 14px;
-      font-weight: bold;;
-    }
-  }
-
-  @media (max-width: 767px) {
     margin-left: 0;
     flex-shrink: 0;
 
     .writer {
-      box-sizing: border-box;
       width: 32px;
       height: 32px;
-      border-radius: 6px;
-      border: 1px solid var(--el-color-primary);
-      color: var(--el-color-white);
-      background: var(--el-color-primary);
+      padding: 0;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      --el-button-bg-color: transparent;
+      --el-button-border-color: transparent;
+      --el-button-hover-bg-color: transparent;
+      --el-button-hover-border-color: transparent;
+      --el-button-active-bg-color: transparent;
+      --el-button-active-border-color: transparent;
+      --el-button-outline-color: transparent;
     }
   }
 }

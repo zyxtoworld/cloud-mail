@@ -830,30 +830,28 @@ const emailService = {
 		const { noRecipient  } = await settingService.query(c);
 
 		//查询所有收件人账号信息
-		let accountList = await orm(c).select().from(account).where(inArray(account.email, receiveEmail)).all();
+		let accountList = await orm(c).select().from(account).where(inArray(sql`${account.email} COLLATE NOCASE`, receiveEmail)).all();
 
 		// 对于含+未精确匹配的收件人，获取基础地址账号
-		const exactEmails = new Set(accountList.map(accountRow => accountRow.email));
 		const plusEmails = receiveEmail.filter(
-			e => e.includes('+') && !exactEmails.has(e)
+			e => e.includes('+') && !accountList.some(a => a.email.toLowerCase() === e.toLowerCase())
 		);
 		const baseAccounts = [];
 		if (plusEmails.length > 0) {
 			const baseEmails = [...new Set(
 				plusEmails.map(e => emailUtils.getBaseEmail(e)).filter(Boolean)
 			)];
-			const needed = baseEmails.filter(e => !exactEmails.has(e));
+			const existing = new Set(accountList.map(a => a.email.toLowerCase()));
+			const needed = baseEmails.filter(e => !existing.has(e.toLowerCase()));
 			if (needed.length > 0) {
 				const rows = await orm(c).select().from(account)
-					.where(inArray(account.email, needed)).all();
+					.where(inArray(sql`${account.email} COLLATE NOCASE`, needed)).all();
 				baseAccounts.push(...rows);
 			}
 		}
 
 		// 合并精确匹配和基础地址匹配的账号用于权限查询
 		const allAccounts = [...accountList, ...baseAccounts];
-		const accountByEmail = new Map(allAccounts.map(accountRow => [accountRow.email, accountRow]));
-
 		//查询所有收件人权限身份
 		const userIds = allAccounts.map(accountRow => accountRow.userId);
 		const roleList = await roleService.selectByUserIds(c, userIds);
@@ -876,12 +874,12 @@ const emailService = {
 			emailValues.toName = emailUtils.getName(email);
 			emailValues.emailId = null;
 
-			let accountRow = accountByEmail.get(email);
+			let accountRow = allAccounts.find(accountRow => accountRow.email.toLowerCase() === email.toLowerCase());
 
 			// 精确匹配不到时回退到主地址（去掉 +tag）
 			if (!accountRow && email.includes('+')) {
 				const baseEmail = emailUtils.getBaseEmail(email);
-				accountRow = accountByEmail.get(baseEmail);
+				accountRow = allAccounts.find(accountRow => accountRow.email.toLowerCase() === baseEmail.toLowerCase());
 			}
 
 			//如果收件人存在就把邮件信息改成收件人的
@@ -1265,7 +1263,7 @@ const emailService = {
 			const rows = await orm(c)
 				.select({ userId: user.userId })
 				.from(user)
-				.where(sql`lower(${user.email}) IN (${sql.join(excludeEmails.map(email => sql`${email.toLowerCase()}`), sql`, `)})`)
+				.where(sql`${user.email} COLLATE NOCASE IN (${sql.join(excludeEmails.map(email => sql`${email}`), sql`, `)})`)
 				.all();
 			excludeUserIds = rows.map(row => row.userId);
 		}
